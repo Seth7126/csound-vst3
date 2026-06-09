@@ -43,6 +43,12 @@ the DAW using MIDI control change messages.
 
 Please log any bug reports or feature requests as a GitHub issue.
 
+## Windows build
+
+Use `CsoundVST3/clean-build-windows.ps1` from a Visual Studio x64 developer shell with 
+`CSOUND_ROOT` (or `CSOUND_INSTALL_PREFIX`) pointing at an **MSVC-built Csound 7** install 
+(same ABI as typical Windows Csound releases).
+
 ## macOS build objectives
 
 These three modes are all supported by the CMake layout in `CsoundVST3/`:

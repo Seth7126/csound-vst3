@@ -13,7 +13,10 @@ set(_tmp "${DST}.download.tmp")
 file(DOWNLOAD "${URL}" "${_tmp}" STATUS _st SHOW_PROGRESS)
 list(GET _st 0 _code)
 if(_code EQUAL 0)
-    file(RENAME "${_tmp}" "${DST}")
+    execute_process(
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${_tmp}" "${DST}"
+    )
+    file(REMOVE "${_tmp}")
     message(STATUS "Updated csound-ac CsoundAC/csound_threaded.hpp -> ${DST}")
 else()
     list(GET _st 1 _msg)

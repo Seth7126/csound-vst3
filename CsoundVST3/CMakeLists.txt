@@ -181,29 +181,25 @@ target_include_directories(CsoundVST3 PRIVATE
     ${CSOUND_INCLUDE_DIRS}
 )
 
-# Every build: download CsoundAC/csound_threaded.hpp (not Csound SDK) from
-# GitHub csound-ac head before compiling. Source/ is listed before
-# CSOUND_INCLUDE_DIRS so this file wins over any installed csound_threaded.hpp.
+# Refresh CsoundAC/csound_threaded.hpp from GitHub csound-ac head at configure time.
+# Source/ is listed before CSOUND_INCLUDE_DIRS so this file wins over any installed copy.
 set(CSOUND_AC_CSOUND_THREADED_URL
     "https://raw.githubusercontent.com/gogins-dev/csound-ac/refs/heads/master/CsoundAC/csound_threaded.hpp"
 )
 set(CSOUND_AC_CSOUND_THREADED_DST "${CSOUND_VST3_SOURCE_DIR}/Source/csound_threaded.hpp")
-# Single -D arguments avoid Ninja/VERBATIM edge cases with empty or quoted URLs for cmake -P.
 string(CONCAT _csound_threaded_url_arg "-DURL=" "${CSOUND_AC_CSOUND_THREADED_URL}")
 string(CONCAT _csound_threaded_dst_arg "-DDST=" "${CSOUND_AC_CSOUND_THREADED_DST}")
-add_custom_target(csound_ac_fetch_csound_threaded
+execute_process(
     COMMAND "${CMAKE_COMMAND}"
         "${_csound_threaded_url_arg}"
         "${_csound_threaded_dst_arg}"
         -P "${CSOUND_VST3_SOURCE_DIR}/cmake/FetchCsoundACCsoundThreaded.cmake"
-    COMMENT "Download csound-ac CsoundAC/csound_threaded.hpp from GitHub head"
-    VERBATIM
 )
-foreach(_csound_ac_fetch_t IN ITEMS CsoundVST3 CsoundVST3_VST3 CsoundVST3_AU CsoundVST3_Standalone)
-    if(TARGET ${_csound_ac_fetch_t})
-        add_dependencies(${_csound_ac_fetch_t} csound_ac_fetch_csound_threaded)
-    endif()
-endforeach()
+if(NOT EXISTS "${CSOUND_AC_CSOUND_THREADED_DST}")
+    message(FATAL_ERROR
+        "Missing csound_threaded.hpp (download failed and no vendored fallback): "
+        "${CSOUND_AC_CSOUND_THREADED_DST}")
+endif()
 
 target_link_libraries(CsoundVST3 PRIVATE
     CsoundBinaryData
