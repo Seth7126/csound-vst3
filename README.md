@@ -150,6 +150,10 @@ controllers in your DAW project.
 
 ## Release Notes 
 
+### Version 2.0.1-beta
+
+Restored the Windows building using MSVC for continuous integration builds of release packages.
+
 ### Version 2.0.0-beta
 
 Ported to Csound version 7. Csound version 6 will no longer be supported in 
