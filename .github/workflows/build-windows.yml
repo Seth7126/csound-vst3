@@ -1,93 +1,69 @@
-name: Build CsoundVST3 (Windows)
+name: Windows x64 Build
 
 on:
   push:
-    branches: [ "master", "main" ]
+    branches: [ master, main, dev ]
   pull_request:
-    branches: [ "master", "main" ]
-  # 允许在 Action 面板手动触发工作流
+    branches: [ master, main, dev ]
+  # 允许手动随时触发构建
   workflow_dispatch:
-
-permissions:
-  contents: write
-  metadata: read
 
 jobs:
   build-windows:
-    name: Windows x64 Build
-    # 你提供的环境信息兼容最新的 windows runner，使用 latest 将会采用带有 MSVC VS2022 的环境
-    runs-on: windows-latest 
+    runs-on: windows-latest
     
     steps:
-      - name: 1. Checkout Repository
+      - name: Checkout Code
         uses: actions/checkout@v4
+
+      - name: Cache Csound 7 installation
+        uses: actions/cache@v4
+        id: cache-csound
         with:
-          submodules: recursive # 如果包含隐式子模块以策安全
+          path: C:\Csound7
+          # 如果CSound Beta更新了，可以通过改变 key 来强制重新下载：
+          key: csound-windows-7.0.0-beta.16-x64
 
-      # ==============================================================
-      # [核心前置依赖]: 你的 PowerShell 脚本强制要求 CSOUND_ROOT (Csound 7)
-      # 由于 GitHub Action 每次环境是干净的，我们需要下载并解压一个 Csound 7 MSVC 包
-      # ==============================================================
-      - name: 2. Download and Setup Csound 7 (MSVC)
+      - name: Download & Extract Csound
+        # 缓存若未命中才下载（减少 20~50秒的 Action CI 执行时间）
+        if: steps.cache-csound.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
-          # 🚨 警告: 请将这里的 URL 替换为你托管/发布好的 Csound 7 MSVC SDK 的下载链接
-          # 因为目前 Csound 7 可能还没有提供固定可依赖的 msvc 最新预编译压缩包
-          $CsoundZipUrl = "https://github.com/csound/csound/releases/download/7.0.0-beta.16/csound-windows-7.0.0-beta.16.zip" 
-          $DownloadPath = "$env:RUNNER_TEMP\csound_msvc.zip"
-          $CsoundInstallDir = "C:\Csound7"
+          $Url = "https://github.com/csound/csound/releases/download/7.0.0-beta.16/csound-windows-7.0.0-beta.16.zip"
+          $ZipPath = "$env:TEMP\csound-beta.zip"
+          Write-Host "Start downloading Csound..."
+          Invoke-WebRequest -Uri $Url -OutFile $ZipPath
+          Write-Host "Extracting Csound..."
+          # 指定解压目标文件夹，这对应后文里的环境配置
+          Expand-Archive -Path $ZipPath -DestinationPath "C:\Csound7" -Force
+          Write-Host "Csound deployed ready!"
 
-          Write-Host "--> Downloading Csound SDK from: $CsoundZipUrl"
-          Try {
-              Invoke-WebRequest -Uri $CsoundZipUrl -OutFile $DownloadPath
-          } Catch {
-              Write-Warning "下载官方地址失败。如果您是私有分发版或暂无公开构建，请确保替换上面的 $CsoundZipUrl"
-              # 阻断构建：因为 Csound 不存在，cmake 必将失败。如果您准备了静态压缩包存放在 repo，可修改为此处解压
-              # exit 1 
-          }
-
-          if (Test-Path $DownloadPath) {
-              Write-Host "--> Extracting Csound to $CsoundInstallDir ..."
-              Expand-Archive -Path $DownloadPath -DestinationPath $CsoundInstallDir -Force
-              
-              # 给全局环境变量注入 CSOUND_ROOT 供 CsoundVST3 的 clean-build-windows.ps1 识别
-              Write-Host "CSOUND_ROOT=$CsoundInstallDir" | Out-File -FilePath $env:GITHUB_ENV -Append
-          } else {
-              Write-Error "Csound SDK file was not downloaded. Check the URL!"
-              exit 1
-          }
-
-      # ==============================================================
-      # 构建主体，调用附件中现成的 PowerShell 编译逻辑
-      # ==============================================================
-      - name: 3. Compile and Archive CsoundVST3
+      - name: Compile & Build CsoundVST3
         shell: pwsh
-        working-directory: ./CsoundVST3
+        env:
+          # 提供具体的根目录（结合刚刚解压出的路径内嵌套目录层级进行配置）
+          CSOUND_ROOT: C:\Csound7\csound-windows-7.0.0-beta.16
         run: |
-          # 运行同级目录里的编译脚本 (带上 Release 级别提升编译后性能)
-          Write-Host "Executing clean-build-windows.ps1 ..."
+          # 验证是否存在，方便遇到 Action CI 问题时的日志查错
+          Test-Path "$env:CSOUND_ROOT\bin\csound.exe" -PathType Leaf
+          
+          cd CsoundVST3
+          
+          # 注意：你的 ps1 里面由于被固化硬编码为 `cmake -G "Visual Studio 17 2022" -A x64`
+          # 最新 Runner Image Win-2025-vs2026 若对 17 拒认且失败的话，建议未来在 ps1 里将其摘掉。
+          # 执行自动部署清库构建指令（此脚本附带创建 dist 存档ZIP的操作）
           .\clean-build-windows.ps1 -Config Release
 
-      # ==============================================================
-      # 将打包生成的二进制收集、存留并上传到 Artifact 供直接下载
-      # 产出目录规则按照你脚本定义的 `$repoRoot\dist` 及其构建产生的压缩包
-      # ==============================================================
-      - name: 4. Upload Built Artifacts
+      - name: Upload Finished CsoundVST3 Installer Zip
         uses: actions/upload-artifact@v4
         with:
-          name: CsoundVST3-Windows-Release
-          path: |
-            dist/
-            build-windows/csound-vst3-*-windows.zip
-          retention-days: 7 # 自动保留 7 天
+          name: CsoundVST3-Windows-Archive
+          # 因为生成结果名为 `csound-vst3-{ver}-windows.zip`
+          path: build-windows/csound-vst3-*.zip
 
-      # ==============================================================
-      # (可选) 当您在仓库里打 Tag (例如 v2.0.0) 的时候，自动发布到 Github Releases
-      # ==============================================================
-      - name: 5. Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+      - name: Upload Clean Binaries Extracted Folder
+        uses: actions/upload-artifact@v4
         with:
-          files: build-windows/csound-vst3-*.zip
-          draft: true  # 保存为草稿供开发者确认后公开
-          generate_release_notes: true
+          name: CsoundVST3-Windows-x64-Binaries
+          # 为了你可以脱离 zip 直接测试查看内容布局，也额外提取这个构建完毕未压包的原生目录供 Action UI 下载使用
+          path: dist/
