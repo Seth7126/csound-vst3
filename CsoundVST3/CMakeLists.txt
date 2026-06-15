@@ -391,6 +391,7 @@ endif()
 
 # Do not install CsoundVST3's BUNDLE to Applications — that collides with CsoundVST3_Standalone's
 # CsoundVST3.app and yields an app bundle with an empty Contents/MacOS ("executable is missing").
+# 原先这里是不区分平台的公共底层运行时
 install(TARGETS CsoundVST3
     RUNTIME DESTINATION bin
     LIBRARY DESTINATION lib
@@ -406,7 +407,6 @@ if(APPLE)
             COMPONENT CsoundVST3_Runtime
         )
     endif()
-
     if(TARGET CsoundVST3_AU)
         install(TARGETS CsoundVST3_AU
             LIBRARY DESTINATION "Library/Audio/Plug-Ins/Components"
@@ -414,11 +414,40 @@ if(APPLE)
             COMPONENT CsoundVST3_Runtime
         )
     endif()
-
     if(TARGET CsoundVST3_Standalone)
         install(TARGETS CsoundVST3_Standalone
             BUNDLE DESTINATION Applications
             COMPONENT CsoundVST3_Runtime
+        )
+    endif()
+elseif(WIN32)
+    # 为 Windows 处理 VST3 及独立应用打包
+    if(TARGET CsoundVST3_VST3)
+        install(TARGETS CsoundVST3_VST3
+            RUNTIME DESTINATION "VST3"
+            COMPONENT CsoundVST3_Runtime
+        )
+    endif()
+
+    if(TARGET CsoundVST3_Standalone)
+        install(TARGETS CsoundVST3_Standalone
+            RUNTIME DESTINATION "Standalone"
+            COMPONENT CsoundVST3_Runtime
+        )
+    endif()
+
+    # 重点：Windows 必须附带 Csound DLL，否则没有全局配置环境的用户无法加载VST插件
+    if(CSOUND_EXECUTABLE)
+        get_filename_component(_CSOUND_BIN_DIR "${CSOUND_EXECUTABLE}" DIRECTORY)
+        # 将 DLL 分发到 Standalone
+        install(FILES "${_CSOUND_BIN_DIR}/csound64.dll"
+            DESTINATION "Standalone"
+            OPTIONAL COMPONENT CsoundVST3_Runtime
+        )
+        # 将 DLL 分发到 VST3，确保宿主读取 VST3 时找得到运行时库
+        install(FILES "${_CSOUND_BIN_DIR}/csound64.dll"
+            DESTINATION "VST3"
+            OPTIONAL COMPONENT CsoundVST3_Runtime
         )
     endif()
 endif()
@@ -444,14 +473,23 @@ add_custom_target(clean_dist
 
 # macOS only: install copies .app/.vst3/.component from the build tree; they must be built first.
 # Depending only on CsoundVST3 can leave CsoundVST3_Standalone unbuilt and yield an empty Contents/MacOS/.
+# Windows and macOS: ensure all bundles build BEFORE packaging them to dist
 set(CSOUND_VST3_STAGE_DIST_DEPS clean_dist CsoundVST3)
+
 if(APPLE)
     foreach(_stage_bundle_t IN ITEMS CsoundVST3_Standalone CsoundVST3_VST3 CsoundVST3_AU)
         if(TARGET ${_stage_bundle_t})
             list(APPEND CSOUND_VST3_STAGE_DIST_DEPS ${_stage_bundle_t})
         endif()
     endforeach()
+elseif(WIN32)
+    foreach(_stage_bundle_t IN ITEMS CsoundVST3_Standalone CsoundVST3_VST3)
+        if(TARGET ${_stage_bundle_t})
+            list(APPEND CSOUND_VST3_STAGE_DIST_DEPS ${_stage_bundle_t})
+        endif()
+    endforeach()
 endif()
+
 add_custom_target(stage_dist
     DEPENDS ${CSOUND_VST3_STAGE_DIST_DEPS}
     COMMAND "${CMAKE_COMMAND}" --install "${CMAKE_BINARY_DIR}" --prefix "${CSOUND_VST3_DIST_DIR}" --component CsoundVST3_Runtime --config "$<CONFIG>"
