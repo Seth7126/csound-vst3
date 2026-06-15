@@ -47,7 +47,7 @@ cmake -S $sourceDir -B $buildDir `
     -DCSOUND_EXECUTABLE="$csoundExe" `
     -DCSOUND_LIBRARY="$($csoundLib.FullName)" `
     -DCSOUND_LIBRARIES="$($csoundLib.FullName)"
-    -DCSOUND_VERSION_MAJOR="$env:CSOUND_VERSION_MAJOR"
+#    -DCSOUND_VERSION_MAJOR="$env:CSOUND_VERSION_MAJOR"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 cmake --build $buildDir --config $Config --parallel --target archive_dist
