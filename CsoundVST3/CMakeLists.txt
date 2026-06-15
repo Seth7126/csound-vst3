@@ -183,23 +183,23 @@ target_include_directories(CsoundVST3 PRIVATE
 
 # Refresh CsoundAC/csound_threaded.hpp from GitHub csound-ac head at configure time.
 # Source/ is listed before CSOUND_INCLUDE_DIRS so this file wins over any installed copy.
-set(CSOUND_AC_CSOUND_THREADED_URL
-    "https://raw.githubusercontent.com/gogins-dev/csound-ac/refs/heads/master/CsoundAC/csound_threaded.hpp"
-)
-set(CSOUND_AC_CSOUND_THREADED_DST "${CSOUND_VST3_SOURCE_DIR}/Source/csound_threaded.hpp")
-string(CONCAT _csound_threaded_url_arg "-DURL=" "${CSOUND_AC_CSOUND_THREADED_URL}")
-string(CONCAT _csound_threaded_dst_arg "-DDST=" "${CSOUND_AC_CSOUND_THREADED_DST}")
-execute_process(
-    COMMAND "${CMAKE_COMMAND}"
-        "${_csound_threaded_url_arg}"
-        "${_csound_threaded_dst_arg}"
-        -P "${CSOUND_VST3_SOURCE_DIR}/cmake/FetchCsoundACCsoundThreaded.cmake"
-)
-if(NOT EXISTS "${CSOUND_AC_CSOUND_THREADED_DST}")
-    message(FATAL_ERROR
-        "Missing csound_threaded.hpp (download failed and no vendored fallback): "
-        "${CSOUND_AC_CSOUND_THREADED_DST}")
-endif()
+#set(CSOUND_AC_CSOUND_THREADED_URL
+#    "https://raw.githubusercontent.com/gogins-dev/csound-ac/refs/heads/master/CsoundAC/csound_threaded.hpp"
+#)
+#set(CSOUND_AC_CSOUND_THREADED_DST "${CSOUND_VST3_SOURCE_DIR}/Source/csound_threaded.hpp")
+#string(CONCAT _csound_threaded_url_arg "-DURL=" "${CSOUND_AC_CSOUND_THREADED_URL}")
+#string(CONCAT _csound_threaded_dst_arg "-DDST=" "${CSOUND_AC_CSOUND_THREADED_DST}")
+#execute_process(
+#    COMMAND "${CMAKE_COMMAND}"
+#        "${_csound_threaded_url_arg}"
+#        "${_csound_threaded_dst_arg}"
+#        -P "${CSOUND_VST3_SOURCE_DIR}/cmake/FetchCsoundACCsoundThreaded.cmake"
+#)
+#if(NOT EXISTS "${CSOUND_AC_CSOUND_THREADED_DST}")
+#    message(FATAL_ERROR
+#        "Missing csound_threaded.hpp (download failed and no vendored fallback): "
+#        "${CSOUND_AC_CSOUND_THREADED_DST}")
+#endif()
 
 target_link_libraries(CsoundVST3 PRIVATE
     CsoundBinaryData
