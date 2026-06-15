@@ -18,6 +18,7 @@ env:
   JUCE_VERSION_REF: 8.0.8
   CSOUND_INSTALL_PREFIX: ${{ github.workspace }}/.cache/csound-install
   CSOUND_CACHE_VERSION_WINDOWS: csound7-develop-v7-msvc
+  CSOUND_VERSION_MAJOR: "7"
   # Signing/notarization overrides...
   CSOUND_AC_ENABLE_CODESIGN: ${{ (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch') && 'ON' || 'OFF' }}
   CSOUND_AC_ENABLE_NOTARIZATION: ${{ (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch') && 'ON' || 'OFF' }}
