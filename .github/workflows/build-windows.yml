@@ -18,7 +18,6 @@ env:
   JUCE_VERSION_REF: 8.0.8
   CSOUND_INSTALL_PREFIX: ${{ github.workspace }}/.cache/csound-install
   CSOUND_CACHE_VERSION_WINDOWS: csound7-develop-v7-msvc
-  CSOUND_VERSION_MAJOR: "7"
   # Signing/notarization overrides...
   CSOUND_AC_ENABLE_CODESIGN: ${{ (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch') && 'ON' || 'OFF' }}
   CSOUND_AC_ENABLE_NOTARIZATION: ${{ (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch') && 'ON' || 'OFF' }}
@@ -216,34 +215,19 @@ jobs:
           chmod +x CsoundVST3/*.sh CsoundVST3/*.bash
           bash CsoundVST3/clean-build-linux.bash
 
+      - name: Build CsoundVST3 - Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          if (Test-Path "${{ matrix.platform.build_dir }}") { Remove-Item -Recurse -Force "${{ matrix.platform.build_dir }}" }
+          if (Test-Path dist) { Remove-Item -Recurse -Force dist }
 
-      - name: Build CsoundVST3 - Windows  
-        if: runner.os == 'Windows'  
-        shell: pwsh  
-        run: |  
-          $ErrorActionPreference = "Stop"  
-          if (Test-Path "${{ matrix.platform.build_dir }}") { Remove-Item -Recurse -Force "${{ matrix.platform.build_dir }}" }  
-          if (Test-Path dist) { Remove-Item -Recurse -Force dist }  
-        
-          $P = $env:CSOUND_INSTALL_PREFIX  
-          $csoundExe = @("$P\bin\csound64.exe","$P\bin\csound.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1  
-          $csoundLib = Get-ChildItem -Path $P -Recurse -Include @("csound64.lib","libcsound64.lib") -ErrorAction SilentlyContinue | Select-Object -First 1  
-          $prefixPath = $P  
-          $vcpkg = Join-Path $P "..\vcpkg_installed\x64-windows"  
-          if (Test-Path $vcpkg) { $prefixPath = "$P;$vcpkg" }  
-        
-          cmake -S CsoundVST3 -B "${{ matrix.platform.build_dir }}" `  
-              -G "Visual Studio 17 2022" -A x64 `  
-              -DCMAKE_INSTALL_PREFIX="dist" `  
-              -DCMAKE_PREFIX_PATH="$prefixPath" `  
-              -DCSOUND_ROOT_HINT="$P" `  
-              -DCSOUND_EXECUTABLE="$csoundExe" `  
-              -DCSOUND_LIBRARY="$($csoundLib.FullName)" `  
-              -DCSOUND_LIBRARIES="$($csoundLib.FullName)" `  
-              -DCSOUND_VERSION_MAJOR=7  
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }  
-          cmake --build "${{ matrix.platform.build_dir }}" --config "${{ env.BUILD_TYPE }}" --parallel --target archive_dist  
+          # 通过预定义好的 Powershell 脚本开始完整的封装打包步骤
+          # 该脚本包含对 cmake --install / archive_dist / csound引擎检测的功能
+          & CsoundVST3\clean-build-windows.ps1 -Config "${{ env.BUILD_TYPE }}"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       # 上传产物以供后续下载 / Publish to Github Releases
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
