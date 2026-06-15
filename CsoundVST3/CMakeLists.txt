@@ -221,7 +221,9 @@ target_link_libraries(CsoundVST3 PRIVATE
 find_package(CURL QUIET)
 if(CURL_FOUND)
     target_link_libraries(CsoundVST3 PRIVATE CURL::libcurl)
-else()
+elseif(NOT WIN32)
+    # 找不到库的死连机制对于 Windows MSVC 是致命错误。
+    # 限定只有 Unix/Mac 在强缺的环境下去降级使用原指令：
     target_link_libraries(CsoundVST3 PRIVATE curl)
 endif()
 
