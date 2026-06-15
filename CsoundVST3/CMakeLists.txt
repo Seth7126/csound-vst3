@@ -421,10 +421,13 @@ if(APPLE)
         )
     endif()
 elseif(WIN32)
-    # 为 Windows 处理 VST3 及独立应用打包
+    # 为 Windows 提供各产出形式打包：把包含 LIBRARY 级别的路径明确指明
     if(TARGET CsoundVST3_VST3)
         install(TARGETS CsoundVST3_VST3
             RUNTIME DESTINATION "VST3"
+            LIBRARY DESTINATION "VST3"
+            ARCHIVE DESTINATION "VST3"
+            BUNDLE  DESTINATION "VST3"
             COMPONENT CsoundVST3_Runtime
         )
     endif()
@@ -432,21 +435,26 @@ elseif(WIN32)
     if(TARGET CsoundVST3_Standalone)
         install(TARGETS CsoundVST3_Standalone
             RUNTIME DESTINATION "Standalone"
+            LIBRARY DESTINATION "Standalone"
+            ARCHIVE DESTINATION "Standalone"
+            BUNDLE  DESTINATION "Standalone"
             COMPONENT CsoundVST3_Runtime
         )
     endif()
 
-    # 重点：Windows 必须附带 Csound DLL，否则没有全局配置环境的用户无法加载VST插件
+    # 关键处理：Windows 必须捆绑内置 csound 的 Dll 组件才能免配环境运行插件
     if(CSOUND_EXECUTABLE)
         get_filename_component(_CSOUND_BIN_DIR "${CSOUND_EXECUTABLE}" DIRECTORY)
-        # 将 DLL 分发到 Standalone
+        
+        # 将 csound64.dll 放入到独立软件包 Standalone 目录中
         install(FILES "${_CSOUND_BIN_DIR}/csound64.dll"
             DESTINATION "Standalone"
             OPTIONAL COMPONENT CsoundVST3_Runtime
         )
-        # 将 DLL 分发到 VST3，确保宿主读取 VST3 时找得到运行时库
+        
+        # 将 csound64.dll 深植入 VST3 本体包里 （注：在 Windows 平台上, VST3 存在标准化沙盒套包目录规范）
         install(FILES "${_CSOUND_BIN_DIR}/csound64.dll"
-            DESTINATION "VST3"
+            DESTINATION "VST3/CsoundVST3.vst3/Contents/x86_64-win"
             OPTIONAL COMPONENT CsoundVST3_Runtime
         )
     endif()
@@ -458,7 +466,6 @@ install(FILES
     OPTIONAL
     COMPONENT CsoundVST3_Runtime
 )
-
 install(DIRECTORY
     "${CSOUND_VST3_SOURCE_DIR}/Resources"
     DESTINATION .
