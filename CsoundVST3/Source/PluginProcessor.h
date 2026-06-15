@@ -46,7 +46,7 @@ public:
         }
     }
 
-    void SetHostImplementedAudioIO(int enabled, int)
+    void SetHostImplementedAudioIO(int enabled, int) override
     {
         if (enabled != 0)
         {
