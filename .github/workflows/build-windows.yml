@@ -1,99 +1,239 @@
-name: Windows x64 Build (VST3/Standalone)
+name: Build 
 
 on:
   push:
     branches:
-      - master
       - main
-    paths:
-      - 'CsoundVST3/**'
+    tags:
+      - "v*"
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
+env:
+  BUILD_TYPE: RelWithDebInfo
+  CSOUND_VERSION_REF: develop
+  JUCE_VERSION_REF: 8.0.8
+  CSOUND_INSTALL_PREFIX: ${{ github.workspace }}/.cache/csound-install
+  CSOUND_CACHE_VERSION_WINDOWS: csound7-develop-v7-msvc
+  # Signing/notarization overrides...
+  CSOUND_AC_ENABLE_CODESIGN: ${{ (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch') && 'ON' || 'OFF' }}
+  CSOUND_AC_ENABLE_NOTARIZATION: ${{ (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch') && 'ON' || 'OFF' }}
+
 jobs:
   build:
-    name: Build on Windows
-    # 指定与你们相似最新的Win版本预制件(windows-latest 当前一般指向最新版的2022及以上带C++的VS环境)
-    runs-on: windows-latest
-    
+    name: ${{ matrix.platform.name }}
+    runs-on: ${{ matrix.platform.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - name: macOS
+            os: macos-14
+            platform_name: macos
+            build_dir: build-macos
+            csound_install: /tmp/csound-install
+            archive_glob: build-macos/csound-vst3-*-macos.zip
+          - name: Linux
+            os: ubuntu-24.04
+            platform_name: linux
+            build_dir: build-linux
+            csound_install: /tmp/csound-install
+            archive_glob: build-linux/csound-vst3-*-linux.zip
+          - name: Windows
+            os: windows-latest   # github 的 windows-latest 包含了 VS 2022。对于 VS 2026(预览节点)也可以自动兼容，它是向前兼的 MSVC 环境。
+            platform_name: windows
+            build_dir: build-windows
+            csound_install: ${{ github.workspace }}/.cache/csound-install
+            archive_glob: build-windows/csound-vst3-*-windows.zip
+
     steps:
-    - name: Checkout Repository
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 1
-        
-    - name: Download and Setup Csound
-      id: csound_install
-      shell: powershell
-      run: |
-        $downloadUrl = "https://github.com/csound/csound/releases/download/7.0.0-beta.16/csound-windows-7.0.0-beta.16.zip"
-        Write-Host "Downloading Csound from $downloadUrl"
-        Invoke-WebRequest -Uri $downloadUrl -OutFile "csound.zip"
-        
-        Write-Host "Extracting installer archive..."
-        Expand-Archive -Path "csound.zip" -DestinationPath "csound_extracted" -Force
-        
-        # 根据需求：往往这种打包ZIP解压出来可能带一个包含依赖或真正用于安装的环境EXE (一般用NSIS打包的安装文件)
-        # 用Silent指令使其默认自动铺陈开(指定路径 /S 还有指定固定输出目标 /D)
-        $installer = Get-ChildItem -Path csound_extracted -Filter *.exe -Recurse | Select-Object -First 1
-        
-        if ($installer) {
-            Write-Host "Running Csound Installer quietly: $($installer.FullName)"
-            Start-Process -FilePath $installer.FullName -ArgumentList "/S", "/D=C:\Csound" -Wait -NoNewWindow
-        } else {
-            # 如果这是一个绿色即开即用压缩版, 则通过路径迁移出内容
-            Write-Host "No Exe installer found inside. Processing as portable setup..."
-            $binFolder = Get-ChildItem -Path csound_extracted -Filter bin -Directory -Recurse | Select-Object -First 1
-            $rootDir = $binFolder.Parent.FullName
-            Move-Item -Path $rootDir -Destination "C:\Csound" -Force
-        }
-        
-        # 核查并证明 Csound64 环境生效完毕
-        if (Test-Path "C:\Csound\bin\csound.exe") {
-            Write-Host "Csound verified at C:\Csound."
-        } else {
-            Throw "FATAL ERROR: Could not resolve 'C:\Csound\bin\csound.exe', aborting build!"
-        }
-        
-    - name: Configure CMake
-      # 这里我们将调用你们的 CsoundVST3 中的环境寻找机制完成依赖匹配 
-      shell: powershell
-      working-directory: ${{ github.workspace }}\CsoundVST3
-      run: |
-        # 丢掉原有ps1被旧式 VisualStudio HardCode 死绑的版本束缚限制。使用系统提供的内置默认发生器以兼容未来的Windows服务器(含VS2026/17+)
-        $buildDir = "..\build-windows"
-        $installDir = "..\dist"
-        
-        cmake -S . -B $buildDir -DCMAKE_BUILD_TYPE=Release `
-            -A x64 `
-            -DCMAKE_INSTALL_PREFIX=$installDir `
-            -DCSOUND_ROOT_HINT="C:\Csound" `
-            -DCSOUND_EXECUTABLE="C:\Csound\bin\csound.exe" `
-            -DCSOUND_LIBRARY="C:\Csound\lib\csound64.lib" `
-            -DCSOUND_LIBRARIES="C:\Csound\lib\csound64.lib"
-            
-    - name: Compile Plugins & Stage Distributions
-      shell: powershell
-      working-directory: ${{ github.workspace }}\CsoundVST3
-      run: |
-        $buildDir = "..\build-windows"
-        # --parallel 参数使用自动加速进程并调用你在 CMake 预先打包的装配命令
-        # target 指定编译 archive_dist 指令，进而递归连带上全部关联程序的编译阶段。
-        cmake --build $buildDir --config Release --parallel --target archive_dist
-        
-    - name: Validate Output files in Dist
-      shell: powershell
-      run: |
-        # 在控制台反馈已生成的产物详情
-        Write-Host "Staged distriutions result:"
-        Get-ChildItem -Path "dist" -Recurse | ForEach-Object { $_.FullName }
-        
-    - name: Upload Finished Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: CsoundVST3_Windows_Plugin
-        # 因为在 cmake 文件里最终目标名称带有 .zip 特性被放到 build 里（通常名叫 csound-vst3-...-windows.zip ），我们可以直接把 zip 与整份源dist输出提取交还
-        path: |
-          build-windows/*.zip
-          dist/Standalone/*.exe
-          dist/VST3 Plugins/**
+      - name: Check out repo (includes CsoundVST3 directory)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install macOS dependencies
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          brew update
+          brew install bison ccache cmake curl eigen flex gettext git liblo libsndfile ninja portaudio python swig
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bison ccache cmake curl flex g++ gcc git libasound2-dev \
+            libcurl4-openssl-dev libffi-dev libfreetype6-dev libgl1-mesa-dev libgtk-3-dev \
+            libjack-jackd2-dev liblo-dev libpulse-dev libsndfile1-dev libwebkit2gtk-4.1-dev \
+            libx11-dev libxcursor-dev libxext-dev libxinerama-dev libxrandr-dev ninja-build \
+            pkg-config portaudio19-dev python3 python3-dev swig
+
+      - name: Install Windows dependencies
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install -y winflexbison3 7zip
+
+      - name: Import Apple code signing certificate
+        if: ${{ runner.os == 'macOS' && (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch') }}
+        uses: apple-actions/import-codesign-certs@v3
+        with:
+          p12-file-base64: ${{ secrets.MACOS_CODESIGN_CERTIFICATE_BASE64 }}
+          p12-password: ${{ secrets.MACOS_CODESIGN_CERTIFICATE_PASSWORD }}
+
+      - name: Configure ccache
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          ccache --set-config=max_size=1G || true
+          ccache --zero-stats || true
+
+      - name: Cache ccache
+        if: runner.os != 'Windows'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.ccache
+            ~/Library/Caches/ccache
+          key: ${{ runner.os }}-ccache-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-ccache-
+
+      # ---------- 处理 CSOUND 在WINDOWS环境依赖  -----------------
+      - name: Resolve Csound develop commit
+        id: csound-source
+        shell: bash
+        run: |
+          set -euo pipefail
+          csound_sha="$(git ls-remote https://github.com/csound/csound.git refs/heads/${CSOUND_VERSION_REF} | awk '{print $1}')"
+          if [[ -z "${csound_sha}" ]]; then
+              echo "Could not resolve Csound ${CSOUND_VERSION_REF} branch." >&2
+              exit 1
+          fi
+          echo "sha=${csound_sha}" >> "${GITHUB_OUTPUT}"
+
+      - name: Cache Csound install - Windows
+        if: runner.os == 'Windows'
+        uses: actions/cache@v4
+        with:
+          path: .cache/csound-install
+          key: ${{ runner.os }}-${{ env.CSOUND_CACHE_VERSION_WINDOWS }}-${{ steps.csound-source.outputs.sha }}
+
+      - name: Validate Csound cache - Windows
+        if: runner.os == 'Windows'
+        id: validate-csound-cache-windows
+        shell: pwsh
+        run: |
+          $P = $env:CSOUND_INSTALL_PREFIX
+          $exe = @( (Join-Path $P "bin\csound64.exe"), (Join-Path $P "bin\csound.exe") ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          $lib = @( (Join-Path $P "lib\csound64.lib"), (Join-Path $P "lib64\csound64.lib"), (Join-Path $P "lib\csound.lib") ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          $dll = @( (Join-Path $P "bin\csound64.dll") ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          $ok = 0
+          if ($exe -and $lib -and $dll) { $ok = 1 }
+          "valid=$ok" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          if ($ok -eq 1) { & $exe --version } else { if (Test-Path $P) { Remove-Item -Recurse -Force $P } }
+
+      - name: Check out Csound
+        uses: actions/checkout@v4
+        with:
+          repository: csound/csound
+          ref: ${{ env.CSOUND_VERSION_REF }}
+          path: csound-source
+          submodules: recursive
+
+      - name: Build and install Csound - macOS
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          rm -rf csound-build "${{ matrix.platform.csound_install }}"
+          cmake -S csound-source -B csound-build -G Ninja -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" -DCMAKE_INSTALL_PREFIX="${{ matrix.platform.csound_install }}" -DCS_FRAMEWORK_DEST="${{ matrix.platform.csound_install }}/Library/Frameworks" -DBUILD_TESTS=OFF -DBUILD_STATIC_LIBRARY=OFF -DBUILD_MULTI_CORE=ON -DBUILD_PYTHON_INTERFACE=OFF -DUSE_DOUBLE=ON -DCMAKE_PREFIX_PATH="/opt/homebrew;/usr/local"
+          cmake --build csound-build --parallel
+          cmake --install csound-build
+
+      - name: Build and install Csound - Linux
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          rm -rf csound-build "${{ matrix.platform.csound_install }}"
+          cmake -S csound-source -B csound-build -G Ninja -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" -DCMAKE_INSTALL_PREFIX="${{ matrix.platform.csound_install }}" -DBUILD_TESTS=OFF -DBUILD_STATIC_LIBRARY=OFF -DBUILD_MULTI_CORE=ON -DBUILD_PYTHON_INTERFACE=OFF -DUSE_DOUBLE=ON
+          cmake --build csound-build --parallel
+          cmake --install csound-build
+
+      - name: Build and install Csound - Windows
+        if: runner.os == 'Windows' && steps.validate-csound-cache-windows.outputs.valid != '1'
+        shell: pwsh
+        run: |
+          Push-Location csound-source
+          .\vcpkg\bootstrap-vcpkg.bat
+          cmake -B build -S . -DUSE_VCPKG=1 -DCUSTOM_CMAKE="./platform/windows/Custom-vs.cmake" -DBUILD_TESTS=OFF -DBUILD_STATIC_LIBRARY=OFF -DBUILD_MULTI_CORE=ON -DBUILD_PYTHON_INTERFACE=OFF -DBUILD_PYTHON_OPCODES=OFF -DUSE_PYTHON=OFF -DUSE_DOUBLE=ON -DCMAKE_INSTALL_PREFIX="$env:CSOUND_INSTALL_PREFIX"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build build --config Release --parallel
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --install build --config Release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Pop-Location
+
+      - name: Add Csound to environment - Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $bin = Join-Path $env:CSOUND_INSTALL_PREFIX "bin"
+          $lib = Join-Path $env:CSOUND_INSTALL_PREFIX "lib"
+          $lib64 = Join-Path $env:CSOUND_INSTALL_PREFIX "lib64"
+          Add-Content -Path $env:GITHUB_PATH -Value $bin
+          Add-Content -Path $env:GITHUB_ENV -Value "PATH=$bin;$lib;$lib64;$env:PATH"
+          Add-Content -Path $env:GITHUB_ENV -Value "CSOUND_ROOT=$($env:CSOUND_INSTALL_PREFIX)"
+
+      # ---------- 开始编译最终产物 CsoundVST3 -----------------
+      - name: Build CsoundVST3 - macOS
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          CSOUND_ROOT: ${{ matrix.platform.csound_install }}
+          CMAKE_PREFIX_PATH: ${{ matrix.platform.csound_install }}
+        run: |
+          chmod +x CsoundVST3/*.sh CsoundVST3/*.bash CsoundVST3/cmake/*.bash
+          bash CsoundVST3/clean-build-macos.bash
+
+      - name: Build CsoundVST3 - Linux
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          CSOUND_ROOT: ${{ matrix.platform.csound_install }}
+          CMAKE_PREFIX_PATH: ${{ matrix.platform.csound_install }}
+        run: |
+          chmod +x CsoundVST3/*.sh CsoundVST3/*.bash
+          bash CsoundVST3/clean-build-linux.bash
+
+      - name: Build CsoundVST3 - Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          if (Test-Path "${{ matrix.platform.build_dir }}") { Remove-Item -Recurse -Force "${{ matrix.platform.build_dir }}" }
+          if (Test-Path dist) { Remove-Item -Recurse -Force dist }
+
+          # 通过预定义好的 Powershell 脚本开始完整的封装打包步骤
+          # 该脚本包含对 cmake --install / archive_dist / csound引擎检测的功能
+          & CsoundVST3\clean-build-windows.ps1 -Config "${{ env.BUILD_TYPE }}"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      # 上传产物以供后续下载 / Publish to Github Releases
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: csound-vst3-${{ matrix.platform.platform_name }}
+          path: ${{ matrix.platform.archive_glob }}
+          if-no-files-found: error
+
+      - name: Create Release Uploads
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ matrix.platform.archive_glob }}
