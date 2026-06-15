@@ -22,6 +22,10 @@ env:
   CSOUND_AC_ENABLE_CODESIGN: ${{ (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch') && 'ON' || 'OFF' }}
   CSOUND_AC_ENABLE_NOTARIZATION: ${{ (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch') && 'ON' || 'OFF' }}
 
+# 目的：修改 GitHub Actions 工作流文件。
+# 将 Windows 构建节点的运行镜像从不稳定的 windows-latest 固定为明确包含 VS 2022 的 windows-2022 镜像，
+# 从而与 PowerShell 脚本中硬编码的 CMake 生成器匹配。
+
 jobs:
   build:
     name: ${{ matrix.platform.name }}
@@ -44,7 +48,7 @@ jobs:
             csound_install: /tmp/csound-install
             archive_glob: build-linux/csound-vst3-*-linux.zip
           - name: Windows
-            os: windows-latest   # github 的 windows-latest 包含了 VS 2022。对于 VS 2026(预览节点)也可以自动兼容，它是向前兼的 MSVC 环境。
+            os: windows-2022   # 在此将系统镜像从 windows-latest 更改为 windows-2022
             platform_name: windows
             build_dir: build-windows
             csound_install: ${{ github.workspace }}/.cache/csound-install
